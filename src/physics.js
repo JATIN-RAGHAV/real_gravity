@@ -209,19 +209,22 @@ export function structure(M, R, T, cs, allowNeutrons = true) {
   const rhoMean = M / (4 / 3 * Math.PI * R ** 3);
   let n = 1.5, poly, rhoC, Pc, cold, th;
   const nGas = gasIndex(M);
-  for (let it = 0; it < 8; it++) {
+  for (let it = 0; it < 24; it++) {
     poly = polytrope(n);
     rhoC = poly.D * rhoMean;
     Pc = poly.W * C.G * M * M / R ** 4;
     cold = coldPressure(rhoC, cs, allowNeutrons);
     th = thermalPressure(rhoC, T, cs);
     const Ptot = cold.total + th.total;
-    const gCold = coldGamma(rhoC, cs, allowNeutrons);
-    const gGas = 1 + 1 / nGas;
-    const gamma = Ptot > 0
-      ? (cold.total * gCold + (th.ion + th.electron) * gGas + th.rad * (4 / 3)) / Ptot
-      : 5 / 3;
-    const nNew = Math.min(4.5, Math.max(0, 1 / Math.max(gamma - 1, 1 / 4.5)));
+    let nNew;
+    if (cold.total <= 0 && th.ion + th.electron < 1e-9 * Pc) {
+      nNew = 0; // a cold solid (or loose aggregate) with no gas: uniform density
+    } else {
+      const gCold = cold.total > 0 ? coldGamma(rhoC, cs, allowNeutrons) : 5 / 3;
+      const gGas = 1 + 1 / nGas;
+      const gamma = (cold.total * gCold + (th.ion + th.electron) * gGas + th.rad * (4 / 3)) / Ptot;
+      nNew = Math.min(4.5, Math.max(0, 1 / Math.max(gamma - 1, 1 / 4.5)));
+    }
     if (Math.abs(nNew - n) < 1e-3) { n = nNew; break; }
     n = 0.5 * n + 0.5 * nNew;
   }
