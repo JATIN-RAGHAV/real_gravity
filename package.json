@@ -1,0 +1,19 @@
+{
+  "name": "gravity-forge",
+  "version": "1.0.0",
+  "description": "A browser game about what gravity does to a ball of matter. Everything runs client-side.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "vite --open",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --open",
+    "bundle": "vite build --config vite.bundle.config.js",
+    "test": "node test/sanity.mjs"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.0.0"
+  }
+}

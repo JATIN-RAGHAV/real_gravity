@@ -8,14 +8,41 @@ climbs the burning chain from hydrogen to silicon, a white dwarf, a neutron
 star, or a black hole. If you squeeze iron hard enough it never fuses: it
 collapses.
 
-No build step. Open `index.html` through any static server, for example:
+Everything runs in the browser. There is no server-side computation.
+
+## Run it
 
 ```
-python3 -m http.server 8765
-# then open http://127.0.0.1:8765/
+npm install
+npm start          # dev server, opens http://localhost:5173
 ```
 
-Scenarios can be linked directly: `index.html#s1` to `#s9` (see the
+Without Node, the source also runs from any static file server:
+
+```
+python3 -m http.server 8765   # then open http://127.0.0.1:8765/
+```
+
+## Build and bundle
+
+```
+npm run build      # static site in dist/ (deploy to any static host)
+npm run preview    # serve dist/ locally
+npm run bundle     # one self-contained file: bundle/index.html
+npm test           # physics sanity checks (node)
+```
+
+`bundle/index.html` has all CSS and JavaScript inlined; it opens straight
+from disk by double-clicking it. Only the fonts come from Google Fonts,
+and the page falls back to system fonts offline.
+
+## Deploy on Vercel
+
+Import the repository on vercel.com or run `npx vercel`. `vercel.json`
+tells it to build with `npm run build` and serve `dist/`; no functions,
+no environment variables.
+
+Scenarios can be linked directly: `#s1` to `#s9` after the URL (see the
 "Try one" list).
 
 ## Layout
@@ -31,7 +58,9 @@ Scenarios can be linked directly: `index.html#s1` to `#s9` (see the
 - `src/ui.js`: readouts, pressure-support bar, density-temperature map,
   composition controls.
 - `src/main.js`: wiring, animation loop, scenarios.
-- `test/sanity.mjs`: node checks, run with `node test/sanity.mjs`.
+- `test/sanity.mjs`: node checks, run with `npm test`.
+- `vite.config.js`, `vite.bundle.config.js`, `vercel.json`: build and
+  deployment configuration.
 
 ## The model
 
