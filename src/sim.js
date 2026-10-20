@@ -170,7 +170,8 @@ function classify(a) {
   }
   if (burning && (fdeg < 0.5 || dominant.key === 'pD')) {
     const k = dominant.key;
-    if (k === 'pD') return { name: 'Brown dwarf (deuterium burning)', kind: 'brown', summary: 'Too light to ignite ordinary hydrogen, it burns its trace deuterium at about a million kelvin for a few million years, then cools forever.' };
+    if (k === 'pD' && msun < 0.08) return { name: 'Brown dwarf (deuterium burning)', kind: 'brown', summary: 'Too light to ignite ordinary hydrogen, it burns its trace deuterium at about a million kelvin for a few million years, then cools forever.' };
+    if (k === 'pD') return { name: 'Pre-main-sequence star (deuterium burning)', kind: 'proto', summary: 'The first fuel to go: trace deuterium burns at about a million kelvin and briefly slows the contraction. Hydrogen ignition comes next.' };
     if ((k === 'pp' || k === 'CNO') && Lnuc < 1e-4 * C.Lsun && fdeg > 0.25) return BROWN;
     if (k === 'pp' || k === 'CNO') {
       const sp = spectralType(a.Teff);
