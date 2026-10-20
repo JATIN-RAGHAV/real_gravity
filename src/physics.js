@@ -328,7 +328,7 @@ export const PRODUCTS = {
   CC: { Ne: 0.6, Mg: 0.4 }, Ne: { O: 0.5, Mg: 0.5 }, OO: { Si: 1 }, Si: { Fe: 1 },
 };
 
-export function nuclearRates(rho, T, comp) {
+export function nuclearRates(rho, T, comp, fe = 1) {
   const r = rho / 1000; // g/cm^3
   const T9 = T / 1e9;
   const out = {};
@@ -337,7 +337,8 @@ export function nuclearRates(rho, T, comp) {
   const X = comp.H || 0, XD = comp.D || 0, Y = comp.He || 0, XC = comp.C || 0, XO = comp.O || 0,
     XNe = comp.Ne || 0, XSi = comp.Si || 0, XMg = comp.Mg || 0;
   // Above ~7e9 K photodisintegration wins over fusion (nuclear statistical equilibrium).
-  const cutoff = Math.exp(-Math.pow(T9 / 5, 6));
+  // ...and once electrons have been captured there are no nuclei left to fuse.
+  const cutoff = Math.exp(-Math.pow(T9 / 5, 6)) * fe * fe;
   const e = (v) => (isFinite(v) && v > 0 ? v * 1e-4 * cutoff : 0); // erg/g/s -> W/kg
   out.pD = e(5.4e21 * r * X * XD / T923 * Math.exp(-3.72 / T913));
   out.pp = e(2.57e4 * r * X * X / T923 * Math.exp(-3.381 / T913) *
@@ -389,13 +390,52 @@ export function opacity(rho, T, cs) {
 // Radiative luminosity from the diffusion estimate L ∝ R T_c^4 / (κ ρ_c), calibrated to the Sun.
 let CL = 1, FBURN = 0.1;
 export const T_HAYASHI = 3300; // K: coolest photosphere a convective, gas-supported star can have
-export function radiativeLuminosity(R, s, cs) {
+export function radiativeLuminosity(R, s, cs, M = C.Msun) {
   const kap = opacity(s.rhoC, s.T, cs);
   const Ldiff = CL * R * s.T ** 4 / (kap * s.rhoC);
   const fdeg = s.cold.total / Math.max(s.Ptot, 1e-300);
+  // Hayashi limit: a convective gas-supported star cannot be cooler than ~3300 K at the surface.
   const w = Math.max(0, Math.min(1, 1 - 2 * fdeg)) * Math.max(0, Math.min(1, Math.log10(s.T / 1e4)));
   const Lhay = w * 4 * Math.PI * R * R * C.sigma * T_HAYASHI ** 4;
-  return Math.max(Ldiff, Lhay);
+  // Mestel cooling: a degenerate core leaks heat through a thin non-degenerate envelope.
+  const wd = Math.max(0, Math.min(1, 2 * fdeg - 1));
+  const Lmestel = wd * 2e-3 * C.Lsun * (M / C.Msun) * Math.pow(s.T / 1e7, 3.5);
+  return Math.max(Ldiff, Lhay, Lmestel);
+}
+
+// Smallest-radius cold (T = T_FLOOR) equilibrium below Rmax, or null if the object would
+// fall inside the GR limit first.
+export function coldBranchBelow(M, Rmax, cs) {
+  const allowN = M <= M_TOV;
+  const Rs = 2 * C.G * M / C.c ** 2;
+  const f = (R) => { const s = structure(M, R, T_FLOOR, cs, allowN); return Math.log(Math.max(s.Ptot, 1e-300) / s.Pc); };
+  let lr = Math.log(Rmax);
+  const lmin = Math.log(BUCHDAHL * Rs);
+  if (f(Rmax) >= 0) { // already supported: walk inward while still supported, then outward root
+    while (lr > lmin && f(Math.exp(lr - 0.05)) >= 0) lr -= 0.05;
+    return Math.exp(lr);
+  }
+  let hi = lr, lo = null;
+  while (lr > lmin) {
+    const lr2 = Math.max(lmin, lr - 0.05);
+    if (f(Math.exp(lr2)) >= 0) { lo = lr2; hi = lr; break; }
+    lr = lr2;
+  }
+  if (lo === null) return null;
+  for (let i = 0; i < 40; i++) { const mid = 0.5 * (lo + hi); if (f(Math.exp(mid)) >= 0) lo = mid; else hi = mid; }
+  return Math.exp(0.5 * (lo + hi));
+}
+
+// Temperature at which thermal pressure equals `ratio` times the cold pressure at density rho.
+export function temperatureForPressureRatio(rho, cs, ratio) {
+  const target = ratio * coldPressure(rho, cs).total;
+  if (target <= 0) return T_FLOOR;
+  let lo = Math.log(T_FLOOR), hi = Math.log(1e13);
+  for (let i = 0; i < 60; i++) {
+    const mid = 0.5 * (lo + hi);
+    if (thermalPressure(rho, Math.exp(mid), cs).total < target) lo = mid; else hi = mid;
+  }
+  return Math.exp(0.5 * (lo + hi));
 }
 // Mass fraction of the star that takes part in core burning: everything for a fully
 // convective star (n = 1.5), about a tenth for a radiative one (n >= 2.2).

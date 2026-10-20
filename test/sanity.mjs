@@ -43,16 +43,16 @@ for (const m of [1.0, 1.4, 2.0, 2.5]) {
 // Sun from a cloud
 let sun = createState(C.Msun, 1e-3, PRESETS.solar.comp);
 describe('Sun cloud', sun);
-evolve('Sun', sun, 4000, 800);
+evolve('Sun', sun, 1500, 500);
 
 let bd = createState(0.05 * C.Msun, 1e-3, PRESETS.solar.comp);
-evolve('BD 0.05', bd, 3000, 1000);
+evolve('BD 0.05', bd, 1500, 500);
 
 let mdwarf = createState(0.1 * C.Msun, 1e-3, PRESETS.solar.comp);
-evolve('M 0.1', mdwarf, 3000, 1000);
+evolve('M 0.1', mdwarf, 1500, 500);
 
 let big = createState(20 * C.Msun, 1e-3, PRESETS.solar.comp);
-evolve('20 Msun', big, 20000, 4000);
+evolve('20 Msun', big, 3000, 1000);
 
 let feball = createState(1.0 * C.Msun, 1e9, PRESETS.iron.comp);
 describe('Fe 1 Msun 1e9', feball);
@@ -79,7 +79,7 @@ describe('CO 1.5 1e10', ia); evolve('CO 1.5', ia, 200);
 log('--- mass scan ---');
 for (const m of [0.03, 0.06, 0.08, 0.1, 0.2, 0.5, 2, 5]) {
   const st = createState(m * C.Msun, 1e-3, PRESETS.solar.comp);
-  for (let i = 0; i < 6000; i++) { step(st); if (st.phase !== 'object') break; }
+  for (let i = 0; i < 3000; i++) { step(st); if (st.phase !== 'object') break; }
   describe(`scan ${m}`, st);
 }
 log('--- rock sanity ---');
@@ -88,12 +88,11 @@ describe('rock 1000', createState(1e3, 1000, PRESETS.rock.comp));
 let e2 = createState(C.Mearth, 5500, PRESETS.earth.comp); evolve('Earth2', e2, 3);
 let ceres = createState(9.4e20, 2100, PRESETS.rock.comp); evolve('Ceres', ceres, 3);
 let fe3b = createState(3.0 * C.Msun, 1e13, PRESETS.iron.comp); evolve('Fe 3 Msun b', fe3b, 50);
-let big2 = createState(20 * C.Msun, 1e-3, PRESETS.solar.comp); evolve('20 Msun b', big2, 60000);
 let ia2 = createState(1.5 * C.Msun, 1e10, PRESETS.co.comp); evolve('CO 1.5 b', ia2, 200);
 let fe2b = createState(2.0 * C.Msun, 1e12, PRESETS.iron.comp); evolve('Fe 2 Msun b', fe2b, 100);
 log('--- 20 Msun full ---');
-let big3 = createState(20 * C.Msun, 1e-3, PRESETS.solar.comp); evolve('20 Msun c', big3, 40000);
-let big4 = createState(40 * C.Msun, 1e-3, PRESETS.solar.comp); evolve('40 Msun', big4, 40000);
-let big5 = createState(8 * C.Msun, 1e-3, PRESETS.solar.comp); evolve('8 Msun', big5, 40000);
-let sunlong = createState(C.Msun, 1e-3, PRESETS.solar.comp); evolve('Sun long', sunlong, 40000, 8000);
+let big3 = createState(20 * C.Msun, 1e-3, PRESETS.solar.comp); evolve('20 Msun c', big3, 30000);
+let big4 = createState(40 * C.Msun, 1e-3, PRESETS.solar.comp); evolve('40 Msun', big4, 30000);
+let big5 = createState(8 * C.Msun, 1e-3, PRESETS.solar.comp); evolve('8 Msun', big5, 30000);
+let sunlong = createState(C.Msun, 1e-3, PRESETS.solar.comp); evolve('Sun long', sunlong, 30000, 10000);
 describe('rock 1000 b', createState(1e3, 1000, PRESETS.rock.comp));

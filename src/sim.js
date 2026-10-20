@@ -7,7 +7,7 @@ import {
   C, T_FLOOR, M_TOV, BUCHDAHL, REACTIONS, PRODUCTS, Q_PHOTO, Q_PHOTO_HE, KEYS,
   normalizeComp, compStats, structure, requiredT, adiabaticEquilibrium,
   nuclearRates, neutrinoLoss, photoDisintegration, radiativeLuminosity,
-  coreFraction, burnFraction, thermalEnergy, blackHole,
+  coreFraction, burnFraction, thermalEnergy, blackHole, coldBranchBelow, temperatureForPressureRatio,
 } from './physics.js';
 
 export function createState(M, rho, comp) {
@@ -15,7 +15,7 @@ export function createState(M, rho, comp) {
   const st = {
     M, R: radiusFromDensity(M, rho), T: T_FLOOR, comp: c, env: { ...c }, fcore: 1,
     time: 0, events: [], phase: 'object', // 'object' | 'blackhole' | 'gone'
-    lastDt: 0, trail: [], ejected: 0, pending: null, envelope: false,
+    lastDt: 0, trail: [], ejected: 0, pending: null, envelope: false, coreLocked: false, isNS: false, flashCooldown: 0,
   };
   settle(st);
   return st;
@@ -45,7 +45,7 @@ export function settle(st) {
   if (T !== null && gas < 0.5 && T < 300) st.T = T_FLOOR;
   // keep the core fraction consistent with the structure
   const s = structure(st.M, st.R, st.T, cs, st.M <= M_TOV);
-  st.fcore = st.envelope ? Math.min(st.fcore, coreFraction(s.n)) : coreFraction(s.n);
+  st.fcore = st.coreLocked ? 1 : st.envelope ? Math.min(st.fcore, coreFraction(s.n)) : coreFraction(s.n);
 }
 
 export function setMass(st, M) {
@@ -63,8 +63,8 @@ export function setComp(st, comp) {
   if (st.phase !== 'object') return;
   st.comp = normalizeComp(comp);
   st.env = { ...st.comp };
-  st.envelope = false;
-  for (const k of Object.keys(st)) if (k.startsWith('on_')) delete st[k];
+  st.envelope = false; st.coreLocked = false; st.isNS = false;
+  for (const k of Object.keys(st)) if (k.startsWith('on_') || k.startsWith('ex_')) delete st[k];
   settle(st);
 }
 
@@ -92,11 +92,11 @@ export function analyze(st) {
   const allowN = st.M <= M_TOV;
   const s = structure(st.M, st.R, st.T, cs, allowN);
   s.T = st.T;
-  const rates = nuclearRates(s.rhoC, st.T, st.comp);
+  const rates = nuclearRates(s.rhoC, st.T, st.comp, s.cold.fe);
   const fcore = st.fcore, fb = burnFraction();
   const reactions = REACTIONS.map(rx => ({ ...rx, eps: rates[rx.key], L: rates[rx.key] * fb * st.M }));
   const Lnuc = reactions.reduce((a, r) => a + r.L, 0);
-  const Lrad = radiativeLuminosity(st.R, s, cs);
+  const Lrad = radiativeLuminosity(st.R, s, cs, st.M);
   const Lnu = neutrinoLoss(s.rhoC, st.T) * fb * st.M;
   const photo = photoDisintegration(s.rhoC, st.T, st.comp);
   const Lphoto = (photo.Fe + photo.He) * fb * st.M;
@@ -160,6 +160,9 @@ function classify(a) {
     if (a.compression < 8 && gas < 0.5) return { name: 'Squeezed ' + mats + ' body', kind: 'unstable', summary: 'Compressed beyond its natural density. Its bonds push back harder than gravity pulls, so it springs back to solid density when released.' };
     return { name: 'Over-compressed ' + mats, kind: 'unstable', summary: 'Internal pressure exceeds what gravity can hold. Released, it rebounds to its equilibrium size on the dynamical timescale.' };
   }
+  if (support.neutron > 0.5) {
+    return { name: 'Neutron star', kind: 'neutron', summary: 'Electrons were forced into protons; the object is a giant nucleus held up by neutron degeneracy pressure, a dozen kilometres across.' };
+  }
   if ((comp.n || 0) > 0.5) return { name: 'Nucleon soup', kind: 'collapse', summary: 'Photodisintegration has undone every nucleus. Nothing exothermic is left; only collapse can follow.' };
   if (burning && fdeg > 0.8 && ['3a', 'CC', 'OO'].includes(dominant.key)) {
     return { name: 'Degenerate ' + mats + ' sphere igniting', kind: 'collapse', summary: 'Fusion has started inside degenerate matter. Degenerate pressure does not rise with temperature, so nothing throttles the burning: a thermonuclear runaway is about to begin.' };
@@ -180,9 +183,6 @@ function classify(a) {
     if (k === 'Ne') return { name: 'Neon-burning star', kind: 'star', summary: 'Photodisintegration-driven neon burning at ~1.3×10⁹ K. A matter of years.' };
     if (k === 'OO') return { name: 'Oxygen-burning star', kind: 'star', summary: 'Oxygen fuses to silicon and sulfur at ~1.5–2×10⁹ K. Months remain.' };
     if (k === 'Si') return { name: 'Silicon-burning star', kind: 'star', summary: 'Silicon burns to iron-group nuclei at ~3×10⁹ K. Iron is the end of the exothermic road; the core has about a day left.' };
-  }
-  if (support.neutron > 0.5) {
-    return { name: 'Neutron star', kind: 'neutron', summary: 'Electrons were forced into protons; the object is a giant nucleus held up by neutron degeneracy pressure, a dozen kilometres across.' };
   }
   if (fdeg > 0.5 && a.compression < 8 && gas < 0.5) {
     if (a.s.Pc < 1e8) return { name: capital(mats) + ' body', kind: 'rock', summary: 'Gravity is weaker than material strength (central pressure below ~10⁸ Pa), so it need not be round. A rock, an asteroid, or a moonlet.' };
@@ -238,7 +238,6 @@ export function spectralType(Teff) {
 export function step(st) {
   if (st.phase !== 'object') return analyze(st);
   const a = analyze(st);
-  const cs = a.cs;
   const Lnet = a.Lrad + a.Lnu + a.Lphoto - a.Lnuc; // energy leaving per second
   const Ltot = a.Lrad + a.Lnu + a.Lphoto + a.Lnuc;
   // --- time step ---
@@ -254,7 +253,7 @@ export function step(st) {
   if (!isFinite(dt) || dt <= 0) dt = C.yr;
 
   // --- hydrostatic assumption fails: thermal timescale within ~10 free-fall times ---
-  if (dt < 0.3 * a.tff && st.T > 1e9 && Lnet > 0) {
+  if (dt < 0.3 * a.tff && st.T > 1e9 && Lnet > 0 && !st.isNS) {
     st.lastDt = a.tff; st.time += a.tff;
     collapseEvent(st, a, st.R);
     return analyze(st);
@@ -268,15 +267,20 @@ export function step(st) {
     const rx = a.dominant;
     // a detonation burns the whole object to iron-group nuclei (~0.8 MeV per nucleon)
     const Efuel = ((a.mix.He || 0) + (a.mix.C || 0) + (a.mix.O || 0)) * 7.7e13 * st.M;
-    if (Efuel > a.Ebind) {
+    // a detonation needs the burning front to outrun expansion: only at high density
+    if (Efuel > a.Ebind && a.s.rhoC > 1e10) {
       st.phase = 'gone';
       st.goneClass = { name: 'Thermonuclear supernova (Type Ia-like)', kind: 'gone', summary: `Degenerate fuel ignited. With no thermal expansion to throttle it, the burning ran away and released ${fmtE(Efuel)} J, more than the ${fmtE(a.Ebind)} J binding energy. Nothing is left but an expanding cloud of iron-group ash.` };
       logEvent(st, 'Thermonuclear runaway in degenerate matter: the object detonates.', 'boom');
       return analyze(st);
     }
-    st.T *= 2.5;
-    logEvent(st, `${rx.label} flash in degenerate matter: degeneracy lifted, the core expands.`, 'ignite');
+    if (st.flashCooldown <= 0) {
+      st.T = Math.max(st.T, temperatureForPressureRatio(a.s.rhoC, a.cs, 2));
+      st.flashCooldown = 200;
+      logEvent(st, `${rx.label} flash in degenerate matter: degeneracy lifted, the core expands.`, 'ignite');
+    }
   }
+  if (st.flashCooldown > 0) st.flashCooldown--;
 
   // --- composition change (core) ---
   const fcoreM = a.fcore * st.M;
@@ -301,23 +305,27 @@ export function step(st) {
     const on = r.L > 0.05 * Math.max(a.Lrad + a.Lnu, 1e-30) && r.L > 1e-12 * C.Lsun;
     const key = 'on_' + r.key;
     if (on && !st[key]) {
-      st[key] = true;
-      if (a.fcore < 0.99) st.envelope = true;
+      st[key] = true; st['ex_' + r.fuel] = false;
+      if (a.fcore < 0.99 && !st.coreLocked) st.envelope = true;
       logEvent(st, `${r.label} ignited at T = ${fmtT(st.T)} K.`, 'ignite');
     }
     const fuelLeft = (r.fuels || [r.fuel]).reduce((acc, f) => acc + (comp[f] || 0), 0);
-    if (!on && st[key] && fuelLeft < 1e-3) { st[key] = false; logEvent(st, `${FUELNAME[r.fuel]} exhausted in the core.`, 'info'); }
+    if (!on && st[key] && fuelLeft < 1e-3) {
+      st[key] = false;
+      if (!st['ex_' + r.fuel]) { st['ex_' + r.fuel] = true; logEvent(st, `${FUELNAME[r.fuel]} exhausted in the core.`, 'info'); }
+    }
   }
   st.comp = comp;
 
   // --- planetary nebula: a degenerate, burnt-out core sheds its envelope ---
-  if (st.envelope && a.fcore < 0.99 && a.fdeg > 0.5 && a.Lnuc < 0.01 * a.Lrad && st.T < 5e8) {
+  if (st.envelope && !st.coreLocked && a.fcore < 0.99 && a.fdeg > 0.5 && a.Lnuc < 0.01 * a.Lrad && st.T < 5e8) {
     const Mwd = Math.min(st.M, Math.max(a.fcore * st.M, 0.08 * st.M + 0.47 * C.Msun));
     if (Mwd < st.M) {
-      st.ejected += st.M - Mwd;
-      logEvent(st, `Planetary nebula: the ${((st.M - Mwd) / C.Msun).toFixed(2)} M☉ envelope drifts away, exposing the ${(Mwd / C.Msun).toFixed(2)} M☉ degenerate core.`, 'boom');
-      st.M = Mwd; st.env = { ...st.comp }; st.fcore = 1; st.envelope = false;
-      st.R = st.R * Math.cbrt(Mwd / (st.M + st.M - Mwd));
+      const Mold = st.M;
+      st.ejected += Mold - Mwd;
+      logEvent(st, `Planetary nebula: the ${((Mold - Mwd) / C.Msun).toFixed(2)} M☉ envelope drifts away, exposing the ${(Mwd / C.Msun).toFixed(2)} M☉ degenerate core.`, 'boom');
+      st.M = Mwd; st.env = { ...st.comp }; st.fcore = 1; st.envelope = false; st.coreLocked = true;
+      st.R = st.R * Math.cbrt(Mwd / Mold);
     }
   }
 
@@ -335,7 +343,7 @@ export function step(st) {
     }
     Tnew = Math.exp(0.5 * (lo + hi));
   }
-  st.T = Tnew;
+  st.T = Math.min(Tnew, 1e12);
   st.overPressured = false;
 
   // --- adiabatic re-equilibration ---
@@ -349,14 +357,14 @@ export function step(st) {
   }
   if (eq.status === 'blackhole') { collapseEvent(st, a, Rold); return analyze(st); }
   st.R = eq.R; st.T = eq.T;
-  if (Rold / eq.R > 3) collapseEvent(st, a, Rold);
+  if (Rold / eq.R > 3 && !st.isNS) collapseEvent(st, a, Rold);
   else if (eq.R / Rold > 3) {
     logEvent(st, `Rebound: pressure pushed the object out from ${fmtR(Rold)} to ${fmtR(eq.R)} (dynamical time ≈ ${fmtTime(a.tff)}).`, 'info');
     st.time += a.tff;
   }
   if (st.phase === 'object') {
     const a2 = analyze(st);
-    st.fcore = st.envelope ? Math.min(st.fcore, coreFraction(a2.s.n)) : coreFraction(a2.s.n);
+    st.fcore = st.coreLocked ? 1 : st.envelope ? Math.min(st.fcore, coreFraction(a2.s.n)) : coreFraction(a2.s.n);
     st.trail.push([Math.log10(a2.s.rhoC), Math.log10(st.T)]);
     if (st.trail.length > 600) st.trail.shift();
     return a2;
@@ -371,20 +379,32 @@ function collapseEvent(st, a, Rold) {
   if (Mrem < st.M) {
     st.ejected += st.M - Mrem;
     logEvent(st, `Core collapse in ${fmtTime(a.tff)}. The ${((st.M - Mrem) / C.Msun).toFixed(2)} M☉ envelope is blown off in a supernova; a ${(Mrem / C.Msun).toFixed(2)} M☉ core remains.`, 'boom');
-    st.M = Mrem; st.env = { ...st.comp }; st.fcore = 1; st.envelope = false;
+    st.M = Mrem;
   } else {
     logEvent(st, `Dynamical collapse in ${fmtTime(a.tff)}: pressure support failed at ${fmtR(Rold)}.`, 'collapse');
   }
+  st.env = { ...st.comp }; st.fcore = 1; st.envelope = false; st.coreLocked = true;
   if (st.M > M_TOV) { becomeBlackHole(st, `${(st.M / C.Msun).toFixed(2)} M☉ exceeds the ${(M_TOV / C.Msun).toFixed(1)} M☉ neutron-star limit`); return; }
-  // land on the neutron-star branch (hot at first: a proto-neutron star)
+  // fall to the next cold branch that can hold the mass
   const cs = compStats(mixedComp(st));
-  const eq2 = adiabaticEquilibrium(st.M, Rold * 0.5, Math.min(st.T, 1e11), cs);
-  if (eq2.status === 'blackhole') { becomeBlackHole(st, 'No equilibrium exists for this mass'); return; }
-  if (eq2.status === 'unbound') { st.R = Rold; return; }
-  st.R = eq2.R; st.T = eq2.T;
+  const R = coldBranchBelow(st.M, Rold * 0.9, cs);
+  if (R === null) { becomeBlackHole(st, 'No equilibrium exists for this mass'); return; }
+  const rhoOld = a.s.rhoC;
+  st.R = R;
   st.overPressured = false;
+  const s2 = structure(st.M, st.R, T_FLOOR, cs, st.M <= M_TOV);
+  // shock heating: adiabatic compression of the thermal content, capped where thermal pressure
+  // would reach a third of the cold support
+  const Tad = Math.min(1e12, st.T * Math.pow(s2.rhoC / rhoOld, 1 / 3));
+  st.T = Math.min(Tad, temperatureForPressureRatio(s2.rhoC, cs, 0.3));
   const a2 = analyze(st);
-  if (a2.support.neutron > 0.3) logEvent(st, `Neutron star formed: ${(st.M / C.Msun).toFixed(2)} M☉ in ${fmtR(st.R)}, cooling by neutrino emission.`, 'ignite');
+  if (a2.support.neutron > 0.3) {
+    st.isNS = true;
+    st.comp = normalizeComp({ n: 1 }); st.env = { ...st.comp };
+    logEvent(st, `Neutron star formed: ${(st.M / C.Msun).toFixed(2)} M☉ in ${fmtR(st.R)}, cooling by neutrino emission.`, 'ignite');
+  } else {
+    logEvent(st, `Settled on the degenerate branch at ${fmtR(st.R)}.`, 'info');
+  }
 }
 
 export function fmtE(x) { return x.toExponential(1).replace('e+', '×10^'); }
