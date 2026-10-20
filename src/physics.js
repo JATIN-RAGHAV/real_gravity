@@ -384,7 +384,9 @@ export function opacity(rho, T, cs) {
   const t35 = Math.pow(T, -3.5);
   const kff = 3.68e18 * (1 - cs.Zmet) * (1 + cs.X) * rho * t35;
   const kbf = 4.34e19 * cs.Zmet * (1 + cs.X) * rho * t35;
-  return kes + kff + kbf;
+  // dust below ~1500 K (Kramers is for ionised gas and diverges at low T)
+  const kdust = T < 1500 ? Math.min(1, 0.01 * (T / 10) ** 2) : 0;
+  return kes + kff + kbf + kdust;
 }
 
 // Radiative luminosity from the diffusion estimate L ∝ R T_c^4 / (κ ρ_c), calibrated to the Sun.
@@ -392,11 +394,15 @@ let CL = 1, FBURN = 0.1;
 export const T_HAYASHI = 3300; // K: coolest photosphere a convective, gas-supported star can have
 export function radiativeLuminosity(R, s, cs, M = C.Msun) {
   const kap = opacity(s.rhoC, s.T, cs);
-  const Ldiff = CL * R * s.T ** 4 / (kap * s.rhoC);
+  // diffusion estimate, never more than a black body at the central temperature
+  const Ldiff = Math.min(CL * R * s.T ** 4 / (kap * s.rhoC), 4 * Math.PI * R * R * C.sigma * s.T ** 4);
   const fdeg = s.cold.total / Math.max(s.Ptot, 1e-300);
-  // Hayashi limit: a convective gas-supported star cannot be cooler than ~3300 K at the surface.
-  const w = Math.max(0, Math.min(1, 1 - 2 * fdeg)) * Math.max(0, Math.min(1, Math.log10(s.T / 1e4)));
-  const Lhay = w * 4 * Math.PI * R * R * C.sigma * T_HAYASHI ** 4;
+  // Photosphere of a gas-supported body: a convective star cannot be cooler than ~3300 K at
+  // the surface (Hayashi limit); cooler, younger objects radiate from a photosphere at a
+  // fraction of their central temperature.
+  const w = Math.max(0, Math.min(1, 1 - 2 * fdeg));
+  const Tph = Math.min(T_HAYASHI, 0.3 * s.T);
+  const Lhay = s.T > 30 ? w * 4 * Math.PI * R * R * C.sigma * Tph ** 4 : 0;
   // Mestel cooling: a degenerate core leaks heat through a thin non-degenerate envelope.
   const wd = Math.max(0, Math.min(1, 2 * fdeg - 1));
   const Lmestel = wd * 2e-3 * C.Lsun * (M / C.Msun) * Math.pow(s.T / 1e7, 3.5);

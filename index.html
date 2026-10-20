@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gravity Forge</title>
+<meta name="description" content="Build a ball of matter, set its mass, density and composition, and let gravity decide whether it becomes a planet, a star, a white dwarf, a neutron star or a black hole.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>Gravity Forge</h1>
+    <p class="tag">Set a mass, squeeze it, choose what it is made of. Gravity decides the rest.</p>
+  </div>
+  <div class="clock" aria-live="off">
+    <span class="clock-label">elapsed</span>
+    <span class="clock-value" id="clock">0 s</span>
+    <span class="clock-step" id="clock-step"></span>
+  </div>
+</header>
+
+<main class="app">
+  <aside class="panel controls" aria-label="Controls">
+    <section class="ctl">
+      <div class="ctl-head"><label for="mass">Mass</label><output id="mass-out" for="mass">1 M☉</output></div>
+      <input type="range" id="mass" min="0" max="33" step="0.01" value="30.2986">
+      <div class="chips" id="mass-chips">
+        <button type="button" data-v="7.346e22">Moon</button>
+        <button type="button" data-v="5.9722e24">Earth</button>
+        <button type="button" data-v="1.89813e27">Jupiter</button>
+        <button type="button" data-v="1.98847e30">Sun</button>
+        <button type="button" data-v="3.97694e31">20 M☉</button>
+      </div>
+    </section>
+
+    <section class="ctl">
+      <div class="ctl-head"><label for="rho">Mean density</label><output id="rho-out" for="rho">1.41×10³ kg/m³</output></div>
+      <input type="range" id="rho" min="-20" max="21" step="0.01" value="3.149">
+      <div class="sub" id="radius-out">radius 1.00 R☉</div>
+      <div class="chips" id="rho-chips">
+        <button type="button" data-v="1e-17">Cloud</button>
+        <button type="button" data-v="1000">Water</button>
+        <button type="button" data-v="7874">Iron</button>
+        <button type="button" data-v="1408">Sun</button>
+        <button type="button" data-v="1e9">White dwarf</button>
+        <button type="button" data-v="5e17">Nuclear</button>
+      </div>
+    </section>
+
+    <section class="ctl">
+      <div class="ctl-head"><label for="preset">Composition</label>
+        <select id="preset"></select>
+      </div>
+      <div class="comp-list" id="comp-list"></div>
+      <p class="hint" id="comp-note">Mass fractions. Once fusion starts, these show the burning core.</p>
+    </section>
+
+    <section class="ctl run">
+      <div class="run-row">
+        <button type="button" id="play" class="primary">Pause</button>
+        <div class="speed" role="group" aria-label="Speed">
+          <button type="button" data-s="1" class="on">1×</button>
+          <button type="button" data-s="10">10×</button>
+          <button type="button" data-s="100">100×</button>
+        </div>
+      </div>
+      <button type="button" id="reset" class="ghost">New object from these settings</button>
+    </section>
+
+    <section class="ctl">
+      <div class="ctl-head"><span class="lbl">Try one</span></div>
+      <div class="scen" id="scenarios"></div>
+    </section>
+  </aside>
+
+  <section class="stage" aria-label="The object">
+    <canvas id="stage"></canvas>
+    <div class="hud">
+      <div class="badge" id="badge-kind">object</div>
+      <h2 id="class-name">…</h2>
+      <p id="class-summary"></p>
+      <p class="status" id="status-line"></p>
+    </div>
+    <div class="hud-br" id="scale-note"></div>
+    <div id="toast" class="toast" hidden></div>
+  </section>
+
+  <aside class="panel readouts" aria-label="Readouts">
+    <section>
+      <h3>Structure</h3>
+      <dl class="kv" id="struct"></dl>
+    </section>
+    <section>
+      <h3>What holds it up</h3>
+      <div class="bar" id="support-bar" role="img" aria-label="Pressure support breakdown"></div>
+      <div class="legend" id="support-legend"></div>
+    </section>
+    <section>
+      <h3>Energy</h3>
+      <dl class="kv" id="energy"></dl>
+      <div class="reactions" id="reactions"></div>
+    </section>
+    <section>
+      <h3>Where it sits</h3>
+      <canvas id="regime" width="330" height="230" aria-label="Central density against central temperature"></canvas>
+      <p class="hint">Central density against central temperature. The trail is this object's history.</p>
+    </section>
+    <section>
+      <h3>Log</h3>
+      <ol class="log" id="log"></ol>
+    </section>
+  </aside>
+</main>
+
+<footer class="about">
+  <details>
+    <summary>How the physics works, and where it is approximate</summary>
+    <div class="about-body">
+      <p>The object is a single self-gravitating sphere. Its interior follows a Lane–Emden polytrope whose index comes from the equation of state, so the centre is denser and hotter than the average. Pressure is the sum of degenerate electrons (the exact zero-temperature Fermi gas, with a lattice correction so each material sits at its laboratory density at zero pressure and a Birch–Murnaghan branch for mild compression), degenerate neutrons once electrons are captured, ideal ions, thermal electrons suppressed by degeneracy, and radiation.</p>
+      <p>When you move a slider you play god: the object gets whatever temperature hydrostatic balance demands at that size. Then time runs. It radiates (diffusion luminosity calibrated to the Sun, a Hayashi floor for convective stars, Mestel cooling for degenerate ones), loses pair neutrinos, and gains fusion energy from deuterium, pp, CNO, triple-α, carbon, neon, oxygen and silicon burning (Kippenhahn &amp; Weigert rates; neon and silicon use threshold laws). Losing energy makes it contract adiabatically; fusion makes it expand. That feedback is the main-sequence thermostat. Iron cannot burn: above ~6×10⁹ K it photodisintegrates and drains the pressure.</p>
+      <p>General relativity enters as limits: nothing static exists inside 1.41 Schwarzschild radii, and neutron degeneracy cannot hold more than 2.3 M☉ (the TOV limit). The Chandrasekhar mass is not put in by hand; it falls out of the relativistic electron gas.</p>
+      <p>Approximations: one zone plus a burning core; no convection, rotation, magnetic fields, mass loss or binaries; no red-giant phases (those need shell burning); planets come out 10–40% too large because the cold equation of state is stiff; gas-cloud dispersal uses a 10 K ambient temperature.</p>
+    </div>
+  </details>
+</footer>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

@@ -170,9 +170,7 @@ function classify(a) {
   if (burning && (fdeg < 0.5 || dominant.key === 'pD')) {
     const k = dominant.key;
     if (k === 'pD') return { name: 'Brown dwarf (deuterium burning)', kind: 'brown', summary: 'Too light to ignite ordinary hydrogen, it burns its trace deuterium at about a million kelvin for a few million years, then cools forever.' };
-    if ((k === 'pp' || k === 'CNO') && Lnuc < 1e-4 * C.Lsun && fdeg > 0.3) {
-      return { name: 'Brown dwarf (trickle of hydrogen burning)', kind: 'brown', summary: 'Degenerate electrons halted the contraction with the centre just warm enough for a feeble pp reaction. Below the ~0.075 M☉ hydrogen-burning limit, this is not a star.' };
-    }
+    if ((k === 'pp' || k === 'CNO') && Lnuc < 1e-4 * C.Lsun && fdeg > 0.25) return BROWN;
     if (k === 'pp' || k === 'CNO') {
       const sp = spectralType(a.Teff);
       const cno = k === 'CNO';
@@ -194,7 +192,7 @@ function classify(a) {
       return { name: T > 3e4 ? n : 'Cold ' + n.toLowerCase(), kind: 'wd', summary: `Supported by electron degeneracy pressure, which does not depend on temperature, so it can only cool. Mass ${msun.toFixed(2)} M☉ against the Chandrasekhar limit of ~1.4 M☉.` };
     }
     if (gas >= 0.5) {
-      if (mjup >= 13 && msun < 0.08) return { name: 'Brown dwarf', kind: 'brown', summary: 'Between 13 and 80 Jupiter masses: degenerate electrons stop the contraction before hydrogen can ignite in earnest. It glows from stored heat and a trickle of fusion.' };
+      if (mjup >= 13 && msun < 0.08) return BROWN;
       if (msun >= 0.08) return { name: 'Degenerate hydrogen–helium object', kind: 'brown', summary: 'Heavy enough for a star, but the degenerate core is too cool to burn hydrogen. In practice this is a star that has not finished contracting.' };
       return { name: 'Gas giant planet', kind: 'planet', summary: 'A hydrogen–helium sphere compressed to metallic density at its centre. Its size barely depends on its mass: more mass means more compression.' };
     }
@@ -207,14 +205,16 @@ function classify(a) {
   }
   if (gas < 0.5 && fdeg > 0.1) return { name: 'Hot degenerate ' + mats + ' core', kind: 'wd', summary: 'Mostly degenerate, with a hot ion gas adding the rest of the support. It is contracting as it radiates and loses neutrinos.' };
   if (T > 3e9) return { name: 'Collapsing core', kind: 'collapse', summary: 'Hotter than 3×10⁹ K with no exothermic fuel left. Photodisintegration and neutrino losses drain the pressure support; collapse follows on the free-fall time.' };
+  if (gas >= 0.5 && mjup >= 13 && msun < 0.08 && fdeg > 0.25) return BROWN;
   if (T > 1e6) {
-    if (cs.X > 0.05 && msun >= 0.075) return { name: 'Pre-main-sequence star', kind: 'proto', summary: 'A contracting ball of gas, heated by its own gravity (Kelvin–Helmholtz contraction). It will ignite hydrogen when the centre reaches a few million kelvin.' };
-    if (cs.X > 0.05) return { name: 'Contracting sub-stellar object', kind: 'proto', summary: 'Shrinking and heating, but it will go degenerate before hydrogen ignition.' };
+    if (comp.H > 0.05 && msun >= 0.075) return { name: 'Pre-main-sequence star', kind: 'proto', summary: 'A contracting ball of gas, heated by its own gravity (Kelvin–Helmholtz contraction). It will ignite hydrogen when the centre reaches a few million kelvin.' };
+    if (comp.H > 0.05) return { name: 'Contracting sub-stellar object', kind: 'proto', summary: 'Shrinking and heating, but it will go degenerate before hydrogen ignition.' };
     return { name: 'Contracting ' + mats + ' core', kind: 'proto', summary: 'A hot, gas-pressure supported ball with no hydrogen to burn. It contracts and heats until the next fuel ignites or degeneracy takes over.' };
   }
   return { name: 'Protostellar gas sphere', kind: 'proto', summary: 'Bound by its own gravity and slowly contracting as it radiates. Central temperature is still below 10⁶ K.' };
 }
 
+const BROWN = { name: 'Brown dwarf', kind: 'brown', summary: 'Between 13 and 80 Jupiter masses: degenerate electrons stop the contraction before hydrogen can ignite in earnest. It glows from stored heat and, at most, a trickle of fusion, and cools forever.' };
 const FUELNAME = { D: 'Deuterium', H: 'Hydrogen', He: 'Helium', C: 'Carbon', Ne: 'Neon', O: 'Oxygen', Si: 'Silicon' };
 function capital(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 export function materialName(comp) {
@@ -223,9 +223,11 @@ export function materialName(comp) {
   if ((comp.Fe || 0) > 0.5) return 'iron';
   if ((comp.C || 0) > 0.5) return 'carbon';
   if ((comp.O || 0) > 0.6 && (comp.H || 0) > 0.05) return 'ice';
+  if ((comp.Si || 0) > 0.5) return 'silicon';
+  if ((comp.Ne || 0) > 0.15 && (comp.Si || 0) < 0.2) return 'oxygen–neon–magnesium';
+  if ((comp.C || 0) + (comp.O || 0) > 0.6) return 'carbon–oxygen';
   if ((comp.Si || 0) + (comp.Mg || 0) + (comp.O || 0) > 0.5) return 'rocky';
   if ((comp.Ne || 0) > 0.5) return 'neon';
-  if ((comp.C || 0) + (comp.O || 0) > 0.6) return 'carbon–oxygen';
   return 'mixed-material';
 }
 export function spectralType(Teff) {
@@ -258,8 +260,9 @@ export function step(st) {
     collapseEvent(st, a, st.R);
     return analyze(st);
   }
-  dt = Math.max(dt, a.tff * 1e-3);
+  dt = Math.max(dt, 1e-6);
   st.lastDt = dt;
+  const t0 = st.time;
   st.time += dt;
 
   // --- thermonuclear runaway in degenerate matter ---
@@ -350,14 +353,28 @@ export function step(st) {
   const eq = adiabaticEquilibrium(st.M, st.R, st.T, cs2);
   const Rold = st.R;
   if (eq.status === 'unbound') {
+    st.time = t0 + a.tff;
     st.phase = 'gone';
     st.goneClass = { name: 'Dispersed gas', kind: 'gone', summary: 'Thermal pressure at 10 K beat gravity at every radius: the object was below its Jeans mass and drifted apart.' };
     logEvent(st, 'Gravity lost: the gas disperses.', 'boom');
     return analyze(st);
   }
+  const dense = a.fdeg > 0.3 || a.T > 1e8;
   if (eq.status === 'blackhole') { collapseEvent(st, a, Rold); return analyze(st); }
   st.R = eq.R; st.T = eq.T;
-  if (Rold / eq.R > 3 && !st.isNS) collapseEvent(st, a, Rold);
+  // contraction cannot outrun free fall: charge the clock for the dynamical time it needs
+  const shrink = (Rold - eq.R) / Rold;
+  if (shrink > 0) {
+    const tdyn = 1.5 * shrink * a.tff;
+    if (tdyn > dt) {
+      st.time += tdyn - dt; st.lastDt = tdyn;
+      if (Rold / eq.R > 2 && !st.freefallNoted) {
+        st.freefallNoted = true;
+        logEvent(st, `Free fall: too transparent to hold its heat, the gas falls inward for ${fmtTime(tdyn)} until it becomes opaque and a hydrostatic core forms.`, 'info');
+      }
+    }
+  }
+  if (Rold / eq.R > 3 && !st.isNS && dense) collapseEvent(st, a, Rold);
   else if (eq.R / Rold > 3) {
     logEvent(st, `Rebound: pressure pushed the object out from ${fmtR(Rold)} to ${fmtR(eq.R)} (dynamical time ≈ ${fmtTime(a.tff)}).`, 'info');
     st.time += a.tff;
