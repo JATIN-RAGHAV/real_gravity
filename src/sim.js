@@ -253,6 +253,7 @@ export function step(st) {
   if (a.photo.Fe > 0) dt = Math.min(dt, 0.05 * Math.max(st.comp.Fe, 1e-3) * Q_PHOTO / a.photo.Fe);
   if (a.photo.He > 0) dt = Math.min(dt, 0.05 * Math.max(st.comp.He, 1e-3) * Q_PHOTO_HE / a.photo.He);
   dt = Math.min(dt, 1e10 * C.yr);
+  if (a.s.Ptot < 0.5 * a.s.Pc) dt = Math.min(dt, 0.1 * a.tff); // unsupported: it is falling, not waiting
   if (!isFinite(dt) || dt <= 0) dt = C.yr;
 
   // --- hydrostatic assumption fails: thermal timescale within ~10 free-fall times ---
