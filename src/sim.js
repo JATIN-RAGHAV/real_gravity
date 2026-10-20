@@ -37,11 +37,12 @@ export function settle(st) {
   const cs = compStats(mixedComp(st));
   const Rs = 2 * C.G * st.M / C.c ** 2;
   if (st.R <= BUCHDAHL * Rs) { becomeBlackHole(st, 'Compressed inside its own Schwarzschild radius'); return; }
-  const T = requiredT(st.M, st.R, cs, st.M <= M_TOV);
   const gas = (st.comp.H || 0) + (st.comp.He || 0);
+  // a cold solid below its natural density is a loose aggregate: it compacts, it is not vapour
+  const loose = gas < 0.5 && meanDensity(st) < cs.rho0;
+  const T = loose ? T_FLOOR : requiredT(st.M, st.R, cs, st.M <= M_TOV);
   st.T = T === null ? T_FLOOR : T;
-  st.overPressured = T === null;
-  // a cold solid below its natural density is not held up by vapour: it compacts
+  st.overPressured = !loose && T === null;
   if (T !== null && gas < 0.5 && T < 300) st.T = T_FLOOR;
   // keep the core fraction consistent with the structure
   const s = structure(st.M, st.R, st.T, cs, st.M <= M_TOV);

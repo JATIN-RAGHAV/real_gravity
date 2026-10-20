@@ -209,7 +209,9 @@ export function structure(M, R, T, cs, allowNeutrons = true) {
   const rhoMean = M / (4 / 3 * Math.PI * R ** 3);
   let n = 1.5, poly, rhoC, Pc, cold, th;
   const nGas = gasIndex(M);
-  for (let it = 0; it < 24; it++) {
+  // gravity negligible against the material's stiffness: a uniform body
+  const uniform = polytrope(0).W * C.G * M * M / R ** 4 < 1e-4 * cs.K0 && cs.vap(T) < 0.5;
+  for (let it = 0; it < (uniform ? 0 : 24); it++) {
     poly = polytrope(n);
     rhoC = poly.D * rhoMean;
     Pc = poly.W * C.G * M * M / R ** 4;
@@ -228,6 +230,7 @@ export function structure(M, R, T, cs, allowNeutrons = true) {
     if (Math.abs(nNew - n) < 1e-3) { n = nNew; break; }
     n = 0.5 * n + 0.5 * nNew;
   }
+  if (uniform) n = 0;
   poly = polytrope(n);
   rhoC = poly.D * rhoMean;
   Pc = poly.W * C.G * M * M / R ** 4;
@@ -305,7 +308,7 @@ export function adiabaticEquilibrium(M, R0, T0, cs) {
     const mid = 0.5 * (lo + hi);
     if (f(Math.exp(mid)) >= 0) lo = mid; else hi = mid;
   }
-  const R = Math.exp(0.5 * (lo + hi));
+  const R = Math.exp(lo); // the side where pressure holds
   const s = structure(M, R, T0, cs, allowN);
   const T = Tof(s.rhoC);
   if (R <= BUCHDAHL * Rs * 1.0001) return { R, T, status: 'blackhole' };
@@ -432,7 +435,7 @@ export function coldBranchBelow(M, Rmax, cs) {
   }
   if (lo === null) return null;
   for (let i = 0; i < 40; i++) { const mid = 0.5 * (lo + hi); if (f(Math.exp(mid)) >= 0) lo = mid; else hi = mid; }
-  return Math.exp(0.5 * (lo + hi));
+  return Math.exp(lo);
 }
 
 // Temperature at which thermal pressure equals `ratio` times the cold pressure at density rho.
