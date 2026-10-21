@@ -36,6 +36,37 @@ npm test           # physics sanity checks (node)
 from disk by double-clicking it. Only the fonts come from Google Fonts,
 and the page falls back to system fonts offline.
 
+## Deploy on Cloudflare (gravity.walrus.codes)
+
+The site is served by a Cloudflare Worker (`worker/index.js`) that hands out
+`dist/` through Workers Static Assets and adds security and caching headers.
+`wrangler.jsonc` binds it to the custom domain `gravity.walrus.codes`.
+
+```
+npm run cf:dev     # build, then run the Worker locally with wrangler
+npm run deploy     # build, then `wrangler deploy` (needs `npx wrangler login`)
+```
+
+Deploys are automated by `.github/workflows/deploy.yml`: every pull request
+builds, runs the tests and dry-runs `wrangler deploy`; every push to `main`
+that touches the Worker, `wrangler.jsonc` or the site sources deploys and
+then checks `https://gravity.walrus.codes/healthz`. It can also be started
+by hand from the Actions tab (workflow_dispatch).
+
+One-time setup, in the Cloudflare account that owns `walrus.codes`:
+
+1. Create an API token from the **Edit Cloudflare Workers** template
+   (dash.cloudflare.com → Manage account → Account API tokens), scoped to
+   that account and the `walrus.codes` zone. The zone permission is what
+   lets the first deploy attach the custom domain.
+2. Copy the account ID from the zone overview page.
+3. In the GitHub repository, add two Actions secrets:
+   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+The first deploy creates the Worker and the `gravity.walrus.codes` DNS
+record and certificate automatically; nothing has to be clicked in the
+dashboard.
+
 ## Deploy on Vercel
 
 Import the repository on vercel.com or run `npx vercel`. `vercel.json`
