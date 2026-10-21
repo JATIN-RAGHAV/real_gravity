@@ -19,6 +19,17 @@ export default {
       return new Response('ok', { headers: { 'Cache-Control': 'no-store' } });
     }
 
+    // The dashboard code editor previews the Worker without its static
+    // assets, so say so instead of throwing. Real deploys (CI, wrangler
+    // deploy) always carry dist/ along with the script.
+    if (!env.ASSETS) {
+      return new Response(
+        'Static assets binding missing. This Worker is deployed with its '
+        + 'dist/ files by CI (wrangler deploy); the dashboard editor preview '
+        + 'cannot serve them.',
+        { status: 500, headers: { 'Content-Type': 'text/plain' } },
+      );
+    }
     const asset = await env.ASSETS.fetch(request);
     const res = new Response(asset.body, asset);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v);
