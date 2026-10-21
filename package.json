@@ -10,10 +10,13 @@
     "build": "vite build",
     "preview": "vite preview --open",
     "bundle": "vite build --config vite.bundle.config.js",
-    "test": "node test/sanity.mjs"
+    "test": "node test/sanity.mjs",
+    "cf:dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
   },
   "devDependencies": {
     "vite": "^6.0.0",
-    "vite-plugin-singlefile": "^2.0.0"
+    "vite-plugin-singlefile": "^2.0.0",
+    "wrangler": "^4.0.0"
   }
 }
