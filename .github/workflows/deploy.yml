@@ -1,0 +1,95 @@
+# Builds the game and deploys the Cloudflare Worker (worker/ + dist/) to
+# gravity.walrus.codes whenever something that ends up in the Worker changes
+# on main. Pull requests get the same build plus a dry-run deploy, so a broken
+# wrangler.jsonc or Worker script is caught before merge.
+#
+# Repository secrets required (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN   token with "Edit Cloudflare Workers" permissions
+#   CLOUDFLARE_ACCOUNT_ID  the account that owns walrus.codes
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - 'wrangler.jsonc'
+      - 'src/**'
+      - 'index.html'
+      - 'style.css'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    paths:
+      - 'worker/**'
+      - 'wrangler.jsonc'
+      - 'src/**'
+      - 'index.html'
+      - 'style.css'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push on main supersedes a queued one.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Validate Worker config (dry run)
+        run: npx wrangler deploy --dry-run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://gravity.walrus.codes
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS https://gravity.walrus.codes/healthz | grep -q ok; then exit 0; fi
+            sleep 5
+          done
+          echo "healthz did not return ok" >&2; exit 1
